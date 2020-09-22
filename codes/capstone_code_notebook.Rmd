@@ -1,0 +1,606 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+
+```{r}
+plot(cars)
+```
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
+
+
+
+```{r}
+#Setting the right working directory:
+setwd("E:/Great Lakes/Capstone")
+getwd()
+
+```
+
+```{r}
+#Read the data file
+dataset <- read.csv("Capstone_dataset_1.csv",stringsAsFactors = F)
+sum(is.na(dataset))
+names(dataset)
+str(dataset)
+```
+
+```{r}
+#converting brand and category into factory variables 
+dataset$brand <- as.factor(dataset$brand)
+dataset$category <- as.factor(dataset$category)
+
+summary(dataset, maxsum = 20)
+dim(dataset)
+
+```
+
+```{r}
+
+#nlp| data conditioning
+
+library(tm)
+dataset_corpus <- VCorpus(VectorSource(dataset$reviews))
+dataset_corpus[[14]]$content
+
+#to lower case
+dataset_corpus_clean <- tm_map(dataset_corpus,content_transformer(tolower))                      
+dataset_corpus_clean[[14]]$content
+
+#remove punctuations
+dataset_corpus_clean <- tm_map(dataset_corpus_clean, removePunctuation)
+dataset_corpus_clean[[14]]$content
+
+#remove stop words
+dataset_corpus_clean <- tm_map(dataset_corpus_clean, removeWords, stopwords("english")) 
+dataset_corpus_clean[[14]]$content
+
+#remove numbers
+dataset_corpus_clean <- tm_map(dataset_corpus_clean, removeNumbers)
+dataset_corpus_clean[[14]]$content
+
+#stripe whitespaces
+dataset_corpus_clean <- tm_map(dataset_corpus_clean, stripWhitespace) 
+dataset_corpus_clean[[14]]$content
+
+#Stemming a document
+dataset_corpus_clean = tm_map(dataset_corpus_clean,stemDocument, language="english")
+dataset_corpus_clean[[14]]$content
+
+```
+
+```{r}
+# Extract term frequency
+library(qdap)
+term_count  <-  freq_terms(dataset_corpus_clean, 20)
+term_count
+
+#plot
+plot(term_count)
+```
+```{r}
+# Create a vector of custom stop words
+custom_stop <- c("year", "hour", "min", "en", "mday", "yday", "wday", 
+                 "datetimestamp", "listauthor", "listsec", "listcontent","id")
+# Remove custom stop words
+library(tm)
+dataset_corpus_clean <- tm_map(dataset_corpus_clean,removeWords, custom_stop)
+dataset_corpus_clean[[14]]$content
+```
+
+```{r}
+words_freq=colSums(df_dtm) 
+library(data.table)
+words_freq=as.data.frame(words_freq) 
+setDT(words_freq, keep.rownames = TRUE)[] 
+colnames(words_freq)=c('words','frequency') 
+library(dplyr) 
+words_freq %>% arrange(-frequency) %>% head(10) 
+
+
+```
+
+```{r}
+#Word-Cloud: 
+library(wordcloud) 
+
+wordcloud(words_freq$words,words_freq$frequency,min.freq = 100,
+          random.order = F,colors=brewer.pal(name='Set1',100))
+
+```
+
+```{r}
+# Create the dtm from the corpus: 
+dtm =DocumentTermMatrix(dataset_corpus_clean) 
+dtm
+sparse= removeSparseTerms(dtm, 0.99)
+sparse
+reviewsparse= as.data.frame(as.matrix(sparse))
+reviewsparse
+
+
+```
+
+```{r}
+#final data frame is in final_dataset
+library(textreg)
+charreviews <-data.frame(convert.tm.to.character(dataset_corpus_clean))
+head(charreviews)
+charreviews
+
+final_dataset <-data.frame(dataset[1:3],charreviews)
+names(final_dataset)
+head(final_dataset)
+
+```
+
+```{r}
+#renaming column 4 to comments which has all review comments
+names(final_dataset)[4] <- "comments"
+names(final_dataset)
+
+char_vector<-convert.tm.to.character(dataset_corpus_clean)
+head(char_vector)
+typeof(char_vector)
+
+
+```
+
+```{r}
+#install.packages("sentimentr")
+library(sentimentr)
+
+sentiment=sentiment(char_vector)
+head(sentiment)
+tail(sentiment)
+summary(sentiment)
+
+```
+
+```{r}
+#Review sentiment histogram
+library(ggplot2)
+summary(sentiment$sentiment)
+qplot(sentiment$sentiment, geom = "histogram", binwidth= 0.1, main= "Review sentiment histogram")
+View(final_dataset)
+sentimentvalue_dataset <-data.frame(final_dataset[1:4],sentiment)
+View(sentimentvalue_dataset)
+
+```
+
+```{r}
+#Group sentiment values to positive, negative and neutral
+sentiment_group <- ifelse(sentiment >= 0.34 , "1", ifelse(sentiment < 0, "-1", 
+                                                          ifelse(sentiment >=0 & sentiment<0.34,"0","0")))
+
+category_dataset <-data.frame(sentimentvalue_dataset,sentiment_group)
+View(category_dataset)
+sum(is.na(category_dataset))
+category_dataset_nonull=na.omit(category_dataset)
+summary(category_dataset_nonull)
+str(category_dataset_nonull)
+
+```
+
+```{r}
+#Analysis of Data
+#-1 NEGATIVE ,0 NEUTRAL,1 POSITIVE
+
+library(ggplot2)
+names(category_dataset_nonull)
+ggplot(category_dataset_nonull, aes(x=sentiment.1)) + 
+  theme_bw() +
+  geom_bar() +
+  labs(y = "count",
+       title = "polarity of review")
+
+
+```
+
+```{r}
+#Spliting dataset into training and testing data
+set.seed(123)
+category_dataset_nonull$comments=as.character(category_dataset_nonull$comments)
+typeof(category_dataset_nonull$comments)
+
+category_dataset_nonull = subset(category_dataset_nonull, select = -c(element_id,sentence_id,element_id.1,sentence_id.1))
+summary(category_dataset_nonull)
+str(category_dataset_nonull)
+
+```
+
+```{r}
+
+#Building Logistic regression Model
+category_dataset_nonull= as.data.frame(category_dataset_nonull)
+names(category_dataset_nonull)
+category_dataset_nonull$logistic_sentiment= as.factor(ifelse(category_dataset_nonull$sentiment >=0.34,1,0))
+table(category_dataset_nonull$logistic_sentiment)
+
+#install.packages("data.table")
+library(data.table)
+setDT(category_dataset_nonull)
+typeof(category_dataset_nonull)
+names(category_dataset_nonull)
+setkey(category_dataset_nonull, S.No)
+set.seed(123)
+all_ids= category_dataset_nonull$S.No
+train_ids= sample(all_ids, 10070)
+test_ids= setdiff(all_ids, train_ids)
+train= category_dataset_nonull[J(train_ids)]
+test= category_dataset_nonull[J(test_ids)]
+write.csv(train,"train.csv",row.names = F)
+write.csv(test,"test.csv",row.names = F)
+train = fread("train.csv")
+test = fread("test.csv")
+table(train$logistic_sentiment)
+table(test$logistic_sentiment)
+table(category_dataset_nonull$logistic_sentiment)
+
+library(ggplot2)
+names(category_dataset_nonull)
+ggplot(category_dataset_nonull, aes(x=logistic_sentiment)) + 
+  theme_bw() +
+  geom_bar() +
+  labs(y = "count",
+       title = "polarity of review")
+
+
+```
+
+```{r}
+# define preprocessing function and tokenization function
+prep_fun <- function(x){
+  x <- tolower(x)
+  x <- removePunctuation(x)
+  x <- stripWhitespace(x)
+  x <- stemDocument(x)
+  return(x)
+}
+
+#install.packages("text2vec")
+library(text2vec)
+tok_fun = word_tokenizer
+
+it_train= itoken(train$comments,
+                 preprocessor = prep_fun, 
+                 tokenizer = tok_fun, 
+                 ids = train$S.No,
+                 progressbar = FALSE)
+
+vocab= create_vocabulary(it_train, stopwords = custom_stop)
+vectorizer = vocab_vectorizer(vocab)
+
+```
+
+```{r}
+t1 = Sys.time()
+dtm_train= create_dtm(it_train,vectorizer)
+print(difftime(Sys.time(), t1, units = 'sec'))
+dim(dtm_train)
+identical(rownames(dtm_train),as.character(train$S.No))
+NFOLDS = 7
+t1 = Sys.time()
+
+```
+
+```{r}
+#install.packages("glmnet")
+library(glmnet)
+
+model = cv.glmnet(x = dtm_train, y = train[['logistic_sentiment']], 
+                  family = 'binomial', 
+                  # L1 penalty
+                  alpha = 1,
+                  # interested in the area under ROC curve
+                  type.measure = "auc",
+                  # 5-fold cross-validation
+                  nfolds = NFOLDS,
+                  # high value is less accurate, but has faster training
+                  thresh = 1e-3,
+                  # again lower number of iterations for faster training
+                  maxit = 1e3)
+
+print(difftime(Sys.time(), t1, units = 'sec'))
+plot(model)
+model
+summary(model)
+print(paste("max AUC =", round(max(model$cvm), 4)))
+
+```
+
+```{r}
+#Predicting for Test data
+it_test= test$comments %>%
+  prep_fun %>% tok_fun %>%
+  itoken(ids= test$S.No, progressbar = FALSE)
+
+dtm_test = create_dtm(it_test,vectorizer)
+preds = predict(model, dtm_test, type = 'response')[,1]
+preds
+glmnet:::auc(test$logistic_sentiment, preds)
+
+```
+
+```{r}
+##Pruning vocabulary 
+pruned_vocab= prune_vocabulary(vocab, 
+                               term_count_min = 10,
+                              doc_proportion_max = 0.5,
+                              doc_proportion_min = 0.001)
+vectorizer_pruned= vocab_vectorizer(pruned_vocab)
+t1 = Sys.time()
+```
+
+```{r}
+dtm_train  = create_dtm(it_train, vectorizer_pruned)
+print(difftime(Sys.time(), t1, units = 'sec'))
+model1 = cv.glmnet(x = dtm_train, y = train[['logistic_sentiment']], 
+                   family = 'binomial', 
+                   # L1 penalty
+                   alpha = 1,
+                   # interested in the area under ROC curve
+                   type.measure = "auc",
+                   # 5-fold cross-validation
+                   nfolds = NFOLDS,
+                   # high value is less accurate, but has faster training
+                   thresh = 1e-3,
+                   # again lower number of iterations for faster training
+                   maxit = 1e3)
+
+print(difftime(Sys.time(), t1, units = 'sec'))
+plot(model1)
+print(paste("max AUC =", round(max(model1$cvm),4)))
+
+```
+
+```{r}
+#N-grams
+t1 = Sys.time()
+vocab= create_vocabulary(it_train, ngram = c(1L,2L))
+print(difftime(Sys.time(), t1, units = 'sec'))
+vocab = prune_vocabulary(vocab, term_count_min = 10, 
+                         doc_proportion_max = 0.5)
+
+bigram_vectorizer = vocab_vectorizer(vocab)
+
+```
+
+```{r}
+dtm_train = create_dtm(it_train, bigram_vectorizer)
+print(difftime(Sys.time(), t1, units = 'sec'))
+model2 = cv.glmnet(x = dtm_train, y = train[['logistic_sentiment']], 
+                   family = 'binomial', 
+                   # L1 penalty
+                   alpha = 1,
+                   # interested in the area under ROC curve
+                   type.measure = "auc",
+                   # 5-fold cross-validation
+                   nfolds = NFOLDS,
+                   # high value is less accurate, but has faster training
+                   thresh = 1e-3,
+                   # again lower number of iterations for faster training
+                   maxit = 1e3)
+print(difftime(Sys.time(), t1, units = 'sec'))
+plot(model2)
+print(paste("max AUC =", round(max(model2$cvm), 4)))
+
+```
+
+```{r}
+#feature_hashing
+h_vectorizer = hash_vectorizer(hash_size = 2 ^ 14, ngram = c(1L, 2L))
+t1 = Sys.time()
+dtm_train = create_dtm(it_train, h_vectorizer)
+print(difftime(Sys.time(), t1, units = 'sec'))
+model3 = cv.glmnet(x = dtm_train, y = train[['logistic_sentiment']], 
+                   family = 'binomial', 
+                   # L1 penalty
+                   alpha = 1,
+                   # interested in the area under ROC curve
+                   type.measure = "auc",
+                   # 5-fold cross-validation
+                   nfolds = NFOLDS,
+                   # high value is less accurate, but has faster training
+                   thresh = 1e-3,
+                   # again lower number of iterations for faster training
+                   maxit = 1e3)
+print(difftime(Sys.time(), t1, units = 'sec'))
+plot(model3)
+print(paste("max AUC =", round(max(model3$cvm), 4)))
+
+```
+
+```{r}
+#testing all the models with test data
+glmnet:::auc(test$logistic_sentiment, preds)
+print(paste("AUC for model in Test dataset=", glmnet:::auc(test$logistic_sentiment, preds)))
+
+dtm_test1 = create_dtm(it_test, vectorizer_pruned)
+dtm_test2 = create_dtm(it_test, bigram_vectorizer)
+dtm_test3 = create_dtm(it_test, h_vectorizer)
+
+preds1 = predict(model1, dtm_test1, type = 'response')
+glmnet:::auc(test$logistic_sentiment, preds1)
+print(paste("AUC for pruned_model in Test dataset=", glmnet:::auc(test$logistic_sentiment, preds1)))
+
+preds2 = predict(model2, dtm_test2, type = 'response')[,1]
+glmnet:::auc(test$logistic_sentiment, preds2)
+print(paste("AUC for bigram_model in Test dataset=", glmnet:::auc(test$logistic_sentiment, preds2)))
+
+
+preds3 = predict(model3, dtm_test3, type = 'response')[,1]
+glmnet:::auc(test$logistic_sentiment, preds3)
+print(paste("AUC for feature_hashing_model in Test dataset=", glmnet:::auc(test$logistic_sentiment, preds3)))
+
+```
+
+```{r}
+#Naive Bayes
+set.seed(123)
+review5= category_dataset_nonull[,-c(9)]
+all_ids1 = review5$S.No
+train_ids1 = sample(all_ids1, 10070)
+test_ids1 = setdiff(all_ids1, train_ids1)
+train1 = review5[J(train_ids1)]
+test1 = review5[J(test_ids1)]
+table(test1$sentiment.1)
+table(train1$sentiment.1)
+
+
+```
+
+```{r}
+# define preprocessing function and tokenization function
+prep_fun <- function(x){
+  x <- tolower(x)
+  x <- removePunctuation(x)
+  x <- stripWhitespace(x)
+  x <- stemDocument(x)
+  return(x)
+}
+
+convert_count1 <- function(x) {
+  y <- ifelse(x >=0.34 ,"1", ifelse(x < 0, "-1", ifelse(x >= 0 & x< 0.34, "0", "0")))
+  y <- factor(y, levels=c(-1,0,1), labels=c("Negative", "Neutral", "Positive"))
+  y
+}
+
+tok_fun = word_tokenizer
+
+```
+
+```{r}
+it_train1= itoken(train1$comments, 
+                  preprocessor = prep_fun, 
+                  tokenizer = tok_fun,
+                  ids = train1$S.No,
+                  progressbar = FALSE)
+
+vocab1 = create_vocabulary(it_train1,stopwords = custom_stop)
+vectorizer1 = vocab_vectorizer(vocab1)
+
+```
+
+```{r}
+t1 = Sys.time()
+dtm_train1 = create_dtm(it_train1, vectorizer1)
+dtm_train1
+
+table(train1$sentiment.1)
+train_labels = table(train1$sentiment.1)
+train_labels
+
+clean.corpus.dtm.freq.train <- apply(dtm_train1,MARGIN = 2, convert_count1)
+clean.corpus.dtm.freq.test  <- apply(dtm_test1,MARGIN = 2, convert_count1)
+library(e1071)
+classifier <- naiveBayes(clean.corpus.dtm.freq.train,as.factor(train1$sentiment.1))
+summary(classifier)
+
+```
+
+```{r}
+text.pred.imp <- predict(classifier,clean.corpus.dtm.freq.test)
+#install.packages("descr")
+library(descr)
+
+CrossTable(text.pred.imp,test$sentiment.1,
+           prop.chisq = FALSE, 
+           prop.t = FALSE,
+           dnn = c('predicted', 'actual'))
+
+
+```
+
+```{r}
+library(caret)
+conf.mat <- confusionMatrix(text.pred.imp,as.factor(test$sentiment.1))
+conf.mat
+
+```
+
+```{r}
+#with 2 classes
+View(category_dataset_nonull)
+review6= category_dataset_nonull
+all_ids2 = review6$S.No
+train_ids2 = sample(all_ids2, 10070)
+test_ids2 = setdiff(all_ids2, train_ids2)
+train2 = review6[J(train_ids2)]
+test2 = review6[J(test_ids2)]
+table(test2$logistic_sentiment)
+table(train2$logistic_sentiment)
+
+```
+
+```{r}
+# define preprocessing function and tokenization function
+prep_fun <- function(x){
+  x <- tolower(x)
+  x <- removePunctuation(x)
+  x <- stripWhitespace(x)
+  x <- stemDocument(x)
+  return(x)
+}
+tok_fun = word_tokenizer
+convert_count <- function(x) {
+  y <- ifelse(x > 0, 1,0)
+  y <- factor(y, levels=c(0,1), labels=c("Negative", "Positive"))
+  y
+}
+
+```
+
+```{r}
+it_train2= itoken(train2$comments, 
+                  preprocessor = prep_fun, 
+                  tokenizer = tok_fun,
+                  ids = train2$S.No,
+                  progressbar = FALSE)
+
+vocab2 = create_vocabulary(it_train2,stopwords = custom_stop)
+vectorizer2 = vocab_vectorizer(vocab2)
+
+
+```
+
+```{r}
+t1 = Sys.time()
+dtm_train2 = create_dtm(it_train2, vectorizer2)
+dtm_train2
+
+table(train2$logistic_sentiment)
+train_labels2 = table(train2$logistic_sentiment)
+train_labels2
+clean.corpus.dtm.freq.train2 <- apply(dtm_train2,MARGIN = 2, convert_count)
+clean.corpus.dtm.freq.test2  <- apply(dtm_test2,MARGIN = 2, convert_count)
+library(e1071)
+classifier2 <- naiveBayes(clean.corpus.dtm.freq.train2,as.factor(train2$logistic_sentiment))
+summary(classifier2)
+
+```
+
+```{r}
+text.pred.imp2 <- predict(classifier2,clean.corpus.dtm.freq.test2)
+#install.packages("descr")
+library(descr)
+
+CrossTable(text.pred.imp2,test$logistic_sentiment,
+           prop.chisq = FALSE, 
+           prop.t = FALSE,
+           dnn = c('predicted', 'actual'))
+
+library(caret)
+conf.mat2 <- confusionMatrix(text.pred.imp2,as.factor(test$logistic_sentiment))
+conf.mat2
+```
+
